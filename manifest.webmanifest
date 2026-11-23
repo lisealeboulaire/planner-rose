@@ -1,0 +1,9 @@
+{
+  "name": "Rosé Planner",
+  "short_name": "Rosé Planner",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fffafd",
+  "theme_color": "#f7d9e5",
+  "icons": []
+}

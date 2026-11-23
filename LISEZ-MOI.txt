@@ -1,0 +1,23 @@
+ROSE PLANNER — première version fonctionnelle
+
+Contenu :
+- index.html : application
+- manifest.webmanifest et service-worker.js : installation PWA après mise en ligne HTTPS
+
+Pour tester :
+1. Ouvrir index.html dans un navigateur récent.
+2. Les données sont enregistrées dans le stockage local du navigateur.
+3. Utiliser « Sauvegarder » régulièrement pour exporter un fichier JSON.
+4. « Importer » restaure une sauvegarde.
+
+Pour l'ajouter comme application sur iPhone/iPad :
+Le dossier doit d'abord être publié sur une adresse HTTPS (par exemple via GitHub Pages).
+Ouvrir cette adresse dans Safari > Partager > Sur l’écran d’accueil.
+
+Important :
+Cette première version inclut les vues Journée, Semaine, Mois, Année, Objectifs et Bilan,
+la création/modification/suppression de tâches, les récurrences simples, les cases à cocher,
+les bilans et l'import/export. Elle n'intègre pas encore les horaires de cours personnels,
+le glisser-déposer, ni la gestion avancée des exceptions de récurrence.
+Les examens sont préchargés selon les informations communiquées. Les heures de début
+ou de fin non précisées restent volontairement vides.
