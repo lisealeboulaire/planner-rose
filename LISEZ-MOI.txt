@@ -21,6 +21,3 @@ les bilans et l'import/export. Elle n'intègre pas encore les horaires de cours 
 le glisser-déposer, ni la gestion avancée des exceptions de récurrence.
 Les examens sont préchargés selon les informations communiquées. Les heures de début
 ou de fin non précisées restent volontairement vides.
-
-
-Mise à jour import photo : la lecture utilise maintenant la position des lignes reconnues pour mieux répartir les cours entre les colonnes des jours. Vérifie toujours les cours détectés avant validation. Un bouton permet aussi d'ajouter un cours manuellement dans l'écran de vérification.
