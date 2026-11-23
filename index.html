@@ -147,19 +147,57 @@ async function readSchedulePhoto(e){
  try{
   if(!window.Tesseract){await new Promise((resolve,reject)=>{let sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';sc.onload=resolve;sc.onerror=()=>reject(new Error('Impossible de charger le moteur de lecture. Vérifie ta connexion internet.'));document.head.appendChild(sc)})}
   const result=await Tesseract.recognize(file,'fra',{logger:m=>{if(m.status==='recognizing text'){let pct=Math.round((m.progress||0)*100);let bar=document.querySelector('#sheet .progress i');if(bar)bar.style.width=pct+'%'}}});
-  showOcrReview(result.data.text,week);
+  showOcrReview(result.data,week);
  }catch(err){document.getElementById('sheet').innerHTML=`<h2>Lecture impossible</h2><p class="muted">${esc(err.message||'La photo n’a pas pu être lue.')}</p><div class="sheet-actions"><button class="btn" onclick="openPhotoImport()">Réessayer</button></div>`}
 }
-function showOcrReview(text,week){
- const lines=text.split(/\n+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
- const timeRe=/([01]?\d|2[0-3])\s*[hH:.]\s*([0-5]?\d)?\s*(?:-|–|à|a|—)\s*([01]?\d|2[0-3])\s*[hH:.]\s*([0-5]?\d)?/;
+function showOcrReview(ocr,week){
+ const text=typeof ocr==='string'?ocr:(ocr.text||'');
+ const rawLines=typeof ocr==='string'?[]:(ocr.lines||[]);
+ const timeRe=/([01]?\d|2[0-3])\s*[hH:.]\s*([0-5]?\d)?\s*(?:-|–|à|a|—)\s*([01]?\d|2[0-3])\s*[hH:.]\s*([0-5]?\d)?/i;
  const days=[['lundi',0],['mardi',1],['mercredi',2],['jeudi',3],['vendredi',4],['samedi',5],['dimanche',6]];
+ const clean=s=>(s||'').replace(/\s+/g,' ').replace(/[|•·]/g,' ').trim();
+ const fmt=(m,i)=>String(m[i]||'00').padStart(2,'0');
  let rows=[];
- lines.forEach(line=>{let m=line.match(timeRe);if(!m)return;let title=line.replace(m[0],' ').replace(/[|•·]/g,' ').trim();if(title.length<2)title='Cours à préciser';let lower=line.toLowerCase();let day=days.find(d=>lower.includes(d[0]));rows.push({title,start:String(m[1]).padStart(2,'0')+':'+String(m[2]||'00').padStart(2,'0'),end:String(m[3]).padStart(2,'0')+':'+String(m[4]||'00').padStart(2,'0'),date:addDays(week,day?day[1]:0)})});
+ // Pour les emplois du temps en grille, on utilise aussi la position des mots
+ // reconnue par Tesseract : cela permet de rattacher chaque cours à sa colonne.
+ if(rawLines.length){
+  const entries=rawLines.map(l=>({text:clean(l.text),x:(l.bbox?.x0+l.bbox?.x1)/2,y:(l.bbox?.y0+l.bbox?.y1)/2,
+   top:l.bbox?.y0??0,bottom:l.bbox?.y1??0})).filter(l=>l.text&&Number.isFinite(l.x)&&Number.isFinite(l.y));
+  const headers=[];
+  for(const e of entries){const d=days.find(v=>new RegExp('\\b'+v[0]+'\\b','i').test(e.text));if(d)headers.push({x:e.x,day:d[1],y:e.y})}
+  const unique=[];
+  headers.sort((a,b)=>a.x-b.x).forEach(h=>{if(!unique.some(u=>u.day===h.day&&Math.abs(u.x-h.x)<35))unique.push(h)});
+  const centers=unique.sort((a,b)=>a.x-b.x);
+  const timeLines=entries.filter(e=>timeRe.test(e.text));
+  for(const t of timeLines){
+   const m=t.text.match(timeRe);if(!m)continue;
+   let dayIndex=0;
+   if(centers.length){let nearest=centers.reduce((best,c)=>Math.abs(c.x-t.x)<Math.abs(best.x-t.x)?c:best,centers[0]);dayIndex=nearest.day}
+   else {const d=days.find(v=>new RegExp('\\b'+v[0]+'\\b','i').test(t.text));if(d)dayIndex=d[1]}
+   const colEntries=entries.filter(e=>Math.abs(e.x-t.x)<Math.max(65,(centers.length>1?Math.min(...centers.slice(1).map((c,i)=>c.x-centers[i]))*.42:110))&&e.y<t.y&&t.y-e.y<125)
+    .filter(e=>!timeRe.test(e.text)&&!days.some(d=>new RegExp('\\b'+d[0]+'\\b','i').test(e.text)))
+    .sort((a,b)=>a.y-b.y);
+   const useful=colEntries.filter(e=>!/L[- ]?SM|amphi|salle|borry|pennec|beshara|dufour|l'ambert|ABC1|BCF|SC[I1]|\b(?:s|sci)\s*\d{2,}/i.test(e.text));
+   let title=useful.slice(0,2).map(e=>e.text).join(' ').trim();
+   if(!title)title='Cours à préciser';
+   rows.push({title,start:fmt(m,1)+':'+fmt(m,2),end:fmt(m,3)+':'+fmt(m,4),date:addDays(week,dayIndex),_y:t.y,_x:t.x});
+  }
+ }
+ // Repli pour les photos où Tesseract ne fournit pas de positions exploitables.
+ if(!rows.length){
+  const lines=text.split(/\n+/).map(clean).filter(Boolean);
+  lines.forEach(line=>{let m=line.match(timeRe);if(!m)return;let title=clean(line.replace(m[0],' '));if(title.length<2)title='Cours à préciser';let lower=line.toLowerCase();let day=days.find(d=>lower.includes(d[0]));rows.push({title,start:fmt(m,1)+':'+fmt(m,2),end:fmt(m,3)+':'+fmt(m,4),date:addDays(week,day?day[1]:0)})});
+ }
+ rows=rows.filter((r,i)=>!rows.some((other,j)=>j<i&&other.date===r.date&&other.start===r.start&&other.end===r.end));
  if(!rows.length){document.getElementById('sheet').innerHTML=`<h2>Texte reconnu ♡</h2><p class="muted">Je n’ai pas réussi à repérer automatiquement les créneaux horaires. Tu peux quand même utiliser le texte reconnu pour saisir tes cours manuellement.</p><textarea id="ocrRaw" rows="8">${esc(text)}</textarea><div class="sheet-actions"><button class="btn ghost" onclick="closeModal()">Fermer</button><button class="btn" onclick="openWeekSetup('${week}')">Saisir les cours</button></div>`;return}
  const dayOpts=Array.from({length:7},(_,i)=>{let d=addDays(week,i);return `<option value="${d}">${new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'short'})}</option>`}).join('');
- document.getElementById('sheet').innerHTML=`<h2>Vérifier les cours détectés ♡</h2><p class="muted">${rows.length} créneau(x) repéré(s). La lecture d’une grille peut mélanger les matières ou les jours : vérifie et corrige chaque ligne avant validation.</p><div id="ocrRows">${rows.map((r,i)=>`<div class="card ocrrow" style="padding:12px"><div class="field"><label>Matière / activité</label><input class="ocrTitle" value="${esc(r.title)}"></div><div class="field"><label>Jour</label><select class="ocrDate">${dayOpts.replace(`value="${r.date}"`,`value="${r.date}" selected`)}</select></div><div class="row"><div class="field" style="flex:1"><label>Début</label><input class="ocrStart" type="time" value="${r.start}"></div><div class="field" style="flex:1"><label>Fin</label><input class="ocrEnd" type="time" value="${r.end}"></div></div><button class="btn small danger" onclick="this.closest('.ocrrow').remove()">Retirer</button></div>`).join('')}</div><div class="sheet-actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" onclick="saveOcrCourses()">Ajouter à mon planning</button></div>`;
+ document.getElementById('sheet').innerHTML=`<h2>Vérifier les cours détectés ♡</h2><p class="muted">${rows.length} créneau(x) repéré(s). La lecture par colonnes est expérimentale : vérifie le jour, la matière et les horaires avant validation. Tu peux aussi ajouter ou retirer des lignes.</p><div id="ocrRows">${rows.map(r=>`<div class="card ocrrow" style="padding:12px"><div class="field"><label>Matière / activité</label><input class="ocrTitle" value="${esc(r.title)}"></div><div class="field"><label>Jour</label><select class="ocrDate">${dayOpts.replace(`value="${r.date}"`,`value="${r.date}" selected`)}</select></div><div class="row"><div class="field" style="flex:1"><label>Début</label><input class="ocrStart" type="time" value="${r.start}"></div><div class="field" style="flex:1"><label>Fin</label><input class="ocrEnd" type="time" value="${r.end}"></div></div><button class="btn small danger" onclick="this.closest('.ocrrow').remove()">Retirer</button></div>`).join('')}</div><div class="sheet-actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn secondary" onclick="addOcrRow()">＋ Ajouter un cours manuellement</button><button class="btn" onclick="saveOcrCourses()">Ajouter à mon planning</button></div>`;
  document.getElementById('modal').classList.add('open');
+}
+function addOcrRow(){
+ const d=document.getElementById('photoWeek')?.value||startWeek(selected);
+ const opts=Array.from({length:7},(_,i)=>{let v=addDays(d,i);return `<option value="${v}">${new Date(v+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'short'})}</option>`}).join('');
+ document.getElementById('ocrRows').insertAdjacentHTML('beforeend',`<div class="card ocrrow" style="padding:12px"><div class="field"><label>Matière / activité</label><input class="ocrTitle" placeholder="Nom du cours"></div><div class="field"><label>Jour</label><select class="ocrDate">${opts}</select></div><div class="row"><div class="field" style="flex:1"><label>Début</label><input class="ocrStart" type="time" value="08:00"></div><div class="field" style="flex:1"><label>Fin</label><input class="ocrEnd" type="time" value="10:00"></div></div><button class="btn small danger" onclick="this.closest('.ocrrow').remove()">Retirer</button></div>`);
 }
 function saveOcrCourses(){let rows=[...document.querySelectorAll('#ocrRows .ocrrow')],added=0;for(let r of rows){let title=r.querySelector('.ocrTitle').value.trim(),date=r.querySelector('.ocrDate').value,start=r.querySelector('.ocrStart').value,end=r.querySelector('.ocrEnd').value;if(!title||!date)continue;data.tasks.push({id:uid(),title,date,start,end,category:'Cours supplémentaires',priority:'fixed',type:'course',done:false,recurrence:'none'});added++}if(!added){alert('Aucun cours valide à ajouter.');return}save();closeModal();view='week';render();alert(`${added} cours ajouté(s) à ton planning.`)}
 function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!x.tasks||!x.goals)throw 0;data=x;save();render();alert('Sauvegarde importée.')}catch(_){alert('Fichier de sauvegarde invalide.')}};r.readAsText(f)}
