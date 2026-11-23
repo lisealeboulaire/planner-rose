@@ -164,7 +164,16 @@ function showOcrReview(ocr,week){
   const entries=rawLines.map(l=>({text:clean(l.text),x:(l.bbox?.x0+l.bbox?.x1)/2,y:(l.bbox?.y0+l.bbox?.y1)/2,
    top:l.bbox?.y0??0,bottom:l.bbox?.y1??0})).filter(l=>l.text&&Number.isFinite(l.x)&&Number.isFinite(l.y));
   const headers=[];
-  for(const e of entries){const d=days.find(v=>new RegExp('\\b'+v[0]+'\\b','i').test(e.text));if(d)headers.push({x:e.x,day:d[1],y:e.y})}
+  // Les en-têtes de colonnes peuvent être regroupés par Tesseract en une seule ligne
+  // (« lundi mardi mercredi… »). On utilise donc les mots individuels, qui gardent
+  // chacun leur propre position horizontale.
+  const wordItems=(ocr.words||[]).map(w=>({text:clean(w.text),x:(w.bbox?.x0+w.bbox?.x1)/2,y:(w.bbox?.y0+w.bbox?.y1)/2}))
+    .filter(w=>w.text&&Number.isFinite(w.x)&&Number.isFinite(w.y));
+  for(const e of wordItems){const d=days.find(v=>new RegExp('^'+v[0]+'$','i').test(e.text));if(d)headers.push({x:e.x,day:d[1],y:e.y})}
+  // Secours si les mots individuels ne sont pas fournis par la version OCR.
+  if(!headers.length){
+   for(const e of entries){const d=days.find(v=>new RegExp('\\b'+v[0]+'\\b','i').test(e.text));if(d)headers.push({x:e.x,day:d[1],y:e.y})}
+  }
   const unique=[];
   headers.sort((a,b)=>a.x-b.x).forEach(h=>{if(!unique.some(u=>u.day===h.day&&Math.abs(u.x-h.x)<35))unique.push(h)});
   const centers=unique.sort((a,b)=>a.x-b.x);
